@@ -4,6 +4,9 @@
   --muted: #767676;
   --bar-bg: #f6f6f6;
   --bar-border: #e4e4e4;
+  --panel-bg: #ffffff;
+  --hover: #e8e8e8;
+  --accent: #2f6fdf;
   --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
   color-scheme: light dark;
@@ -16,6 +19,9 @@
     --muted: #9a9a9a;
     --bar-bg: #141414;
     --bar-border: #2a2a2a;
+    --panel-bg: #202020;
+    --hover: #2e2e2e;
+    --accent: #4d8cf5;
   }
   /* mirrors @milkdown/crepe/theme/frame-dark.css */
   .milkdown {
@@ -136,6 +142,236 @@ body {
 
 #mode:hover {
   color: var(--fg);
+}
+
+/* ---------- menu bar ---------- */
+
+#menubar {
+  display: flex;
+  height: 28px;
+  padding: 0 4px;
+  background: var(--bar-bg);
+  border-bottom: 1px solid var(--bar-border);
+  font-size: 13px;
+  user-select: none;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu-title {
+  height: 100%;
+  padding: 0 10px;
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.menu-title:hover,
+.menu-title.open {
+  background: var(--hover);
+}
+
+.menu-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 250px;
+  padding: 4px;
+  background: var(--panel-bg);
+  border: 1px solid var(--bar-border);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+
+.menu-item {
+  display: grid;
+  grid-template-columns: 18px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px 5px 6px;
+  font: inherit;
+  text-align: left;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.menu-item.active {
+  background: var(--hover);
+}
+
+.menu-key {
+  padding-left: 24px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.menu-check {
+  text-align: center;
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--bar-border);
+}
+
+/* ---------- dialogs ---------- */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.modal {
+  width: min(420px, calc(100vw - 32px));
+  max-height: 76vh;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px;
+  background: var(--panel-bg);
+  color: var(--fg);
+  border: 1px solid var(--bar-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  font-size: 13px;
+}
+
+.modal.wide {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.modal h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-note {
+  margin: 0 0 10px;
+  color: var(--muted);
+}
+
+.modal-input {
+  width: 100%;
+  padding: 7px 10px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--bar-border);
+  border-radius: 4px;
+  outline: none;
+}
+
+.modal-input:focus {
+  border-color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.modal button {
+  padding: 5px 14px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--bar-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.modal button.primary {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.shortcut-list {
+  overflow: auto;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+
+.shortcut-list h3 {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.shortcut-row span {
+  flex: 1;
+}
+
+.modal .shortcut-key {
+  min-width: 130px;
+  padding: 3px 10px;
+  font: 12px var(--font-mono);
+  text-align: center;
+}
+
+.modal .shortcut-key.capturing {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.modal .shortcut-reset {
+  padding: 3px 7px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+}
+
+.modal .shortcut-reset[hidden] {
+  display: none;
+}
+
+/* ---------- print / PDF ---------- */
+
+@media print {
+  #menubar,
+  #status {
+    display: none;
+  }
+  html,
+  body,
+  #scroller {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+  .milkdown {
+    --crepe-color-background: #fff;
+    --crepe-color-on-background: #000;
+  }
 }
 
 @media (max-width: 640px) {

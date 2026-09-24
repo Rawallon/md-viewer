@@ -3,11 +3,35 @@ import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import "./styles.css";
 
+import { editorViewCtx, remarkStringifyOptionsCtx } from "@milkdown/kit/core";
+import {
+  createCodeBlockCommand,
+  insertHrCommand,
+  toggleEmphasisCommand,
+  toggleInlineCodeCommand,
+  toggleLinkCommand,
+  toggleStrongCommand,
+  turnIntoTextCommand,
+  wrapInBlockquoteCommand,
+  wrapInBulletListCommand,
+  wrapInHeadingCommand,
+  wrapInOrderedListCommand,
+} from "@milkdown/kit/preset/commonmark";
+import { insertTableCommand, toggleStrikethroughCommand } from "@milkdown/kit/preset/gfm";
+import { redoCommand, undoCommand } from "@milkdown/kit/plugin/history";
+import { callCommand, getHTML, insert } from "@milkdown/kit/utils";
+
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save, ask, message } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
+
+import { CommandRegistry } from "./commands";
+import { mountMenuBar, type MenuDef } from "./menubar";
+import { modalOpen, openShortcutsDialog, promptText } from "./dialogs";
 
 const MD_FILTERS = [
   { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
@@ -20,11 +44,13 @@ const fileNameEl = document.getElementById("file-name")!;
 const wordsEl = document.getElementById("words")!;
 const modeBtn = document.getElementById("mode") as HTMLButtonElement;
 const appWindow = getCurrentWindow();
+const webview = getCurrentWebview();
 
 let crepe: Crepe | null = null;
 let filePath: string | null = null;
 let savedMarkdown = ""; // baseline to compute dirty state
 let sourceMode = false;
+let zoom = 1;
 
 // ---------- helpers ----------
 
@@ -73,6 +99,8 @@ async function mountEditor(markdown: string) {
       [Crepe.Feature.Placeholder]: { text: "Start writing…" },
     },
   });
+  // "-" bullets instead of remark's default "*": smaller diffs for most files
+  crepe.editor.config((ctx) => ctx.update(remarkStringifyOptionsCtx, (o) => ({ ...o, bullet: "-" as const })));
   crepe.on((api) => api.markdownUpdated(() => refreshStatus()));
   await crepe.create();
 }
@@ -165,25 +193,204 @@ async function cmdSave(saveAs = false): Promise<boolean> {
   return true;
 }
 
-// ---------- wiring ----------
+const EXPORT_CSS = `body{max-width:820px;margin:40px auto;padding:0 20px;font:16px/1.65 "Segoe UI",system-ui,sans-serif;color:#1f1f1f}
+pre,code{font-family:"Cascadia Code",Consolas,monospace;background:#f4f4f4;border-radius:4px}code{padding:1px 4px}pre{padding:12px;overflow:auto}pre code{padding:0}
+table{border-collapse:collapse}th,td{border:1px solid #d0d0d0;padding:6px 12px}blockquote{margin:0;padding-left:16px;border-left:4px solid #ddd;color:#555}img{max-width:100%}`;
+
+async function cmdExportHtml() {
+  await setSourceMode(false);
+  const body = crepe!.editor.action(getHTML());
+  const title = baseName(filePath).replace(/\.[^.]+$/, "");
+  const html = `<!doctype html>\n<html><head><meta charset="utf-8"><title>${title}</title><style>${EXPORT_CSS}</style></head>\n<body>\n${body}\n</body></html>\n`;
+  const path = await save({
+    defaultPath: (filePath ?? "Untitled.md").replace(/\.[^.\\/]+$/, "") + ".html",
+    filters: [{ name: "HTML", extensions: ["html"] }],
+  });
+  if (!path) return;
+  try {
+    await invoke("write_file", { path, contents: html });
+  } catch (e) {
+    await message(String(e), { title: "Export failed", kind: "error" });
+  }
+}
+
+// ---------- edit / format ----------
+
+/**
+ * Run a Milkdown command in rich mode; no-op in source mode.
+ * Takes the command itself: its `.key` is only assigned once an editor loads it.
+ */
+function md(cmd: { key: Parameters<typeof callCommand>[0] }, payload?: unknown) {
+  return () => {
+    if (!crepe || sourceMode) return;
+    crepe.editor.action(callCommand(cmd.key, payload as never));
+    crepe.editor.action((ctx) => ctx.get(editorViewCtx).focus());
+  };
+}
+
+// Copy/cut puts markdown on the clipboard. Milkdown already serializes the
+// selection to markdown as text/plain; drop text/html so other apps paste that.
+let richCopy = false;
+const markdownOnly = (e: ClipboardEvent) => {
+  if (richCopy || !e.clipboardData) return;
+  const text = e.clipboardData.getData("text/plain");
+  if (!text) return;
+  e.clipboardData.clearData();
+  e.clipboardData.setData("text/plain", text);
+};
+editorEl.addEventListener("copy", markdownOnly);
+editorEl.addEventListener("cut", markdownOnly);
+
+function copyRich() {
+  richCopy = true;
+  document.execCommand("copy");
+  richCopy = false;
+}
+
+async function paste() {
+  const text = await readText().catch(() => "");
+  if (!text) return;
+  if (sourceMode) {
+    sourceEl.setRangeText(text, sourceEl.selectionStart, sourceEl.selectionEnd, "end");
+    refreshStatus();
+  } else crepe?.editor.action(insert(text));
+}
+
+function undo() {
+  if (sourceMode) document.execCommand("undo");
+  else md(undoCommand)();
+}
+
+function redo() {
+  if (sourceMode) document.execCommand("redo");
+  else md(redoCommand)();
+}
+
+async function insertLink() {
+  if (!crepe || sourceMode) return;
+  const href = await promptText("Insert link", "https://…");
+  if (!href) return;
+  const empty = crepe.editor.action((ctx) => ctx.get(editorViewCtx).state.selection.empty);
+  if (empty) crepe.editor.action(insert(`[${href}](${href})`, true));
+  else md(toggleLinkCommand, { href })();
+}
+
+function toggleTask() {
+  if (!crepe || sourceMode) return;
+  crepe.editor.action((ctx) => {
+    const view = ctx.get(editorViewCtx);
+    const findItem = () => {
+      const $from = view.state.selection.$from;
+      for (let d = $from.depth; d > 0; d--) {
+        const node = $from.node(d);
+        if (node.type.name === "list_item") return { node, pos: $from.before(d) };
+      }
+      return null;
+    };
+    if (!findItem()) callCommand(wrapInBulletListCommand.key)(ctx);
+    const item = findItem();
+    if (!item) return;
+    const checked = item.node.attrs.checked == null ? false : null;
+    view.dispatch(view.state.tr.setNodeMarkup(item.pos, undefined, { ...item.node.attrs, checked }));
+    view.focus();
+  });
+}
+
+function setZoom(z: number) {
+  zoom = Math.min(3, Math.max(0.5, Math.round(z * 10) / 10));
+  webview.setZoom(zoom);
+  try {
+    localStorage.setItem("md-viewer.zoom", String(zoom));
+  } catch {
+    /* ignore */
+  }
+}
+
+// ---------- commands + menu ----------
+
+const registry = new CommandRegistry();
+registry.add(
+  { id: "file.new", label: "New", key: "Ctrl+N", run: cmdNew },
+  { id: "file.open", label: "Open…", key: "Ctrl+O", run: cmdOpen },
+  { id: "file.save", label: "Save", key: "Ctrl+S", run: () => cmdSave() },
+  { id: "file.saveAs", label: "Save As…", key: "Ctrl+Shift+S", run: () => cmdSave(true) },
+  { id: "file.exportHtml", label: "Export as HTML…", key: "Ctrl+Shift+E", run: cmdExportHtml },
+  { id: "file.print", label: "Print / Export PDF…", key: "Ctrl+P", run: () => window.print() },
+  { id: "file.exit", label: "Exit", key: "Alt+F4", native: true, run: () => appWindow.close() },
+
+  { id: "edit.undo", label: "Undo", key: "Ctrl+Z", native: true, run: undo },
+  { id: "edit.redo", label: "Redo", key: "Ctrl+Y", native: true, run: redo },
+  { id: "edit.cut", label: "Cut", key: "Ctrl+X", native: true, run: () => document.execCommand("cut") },
+  { id: "edit.copy", label: "Copy (Markdown)", key: "Ctrl+C", native: true, run: () => document.execCommand("copy") },
+  { id: "edit.copyRich", label: "Copy as Rich Text", key: "Ctrl+Shift+C", run: copyRich },
+  { id: "edit.paste", label: "Paste", key: "Ctrl+V", native: true, run: paste },
+  { id: "edit.selectAll", label: "Select All", key: "Ctrl+A", native: true, run: () => document.execCommand("selectAll") },
+
+  { id: "fmt.bold", label: "Bold", key: "Ctrl+B", native: true, run: md(toggleStrongCommand) },
+  { id: "fmt.italic", label: "Italic", key: "Ctrl+I", native: true, run: md(toggleEmphasisCommand) },
+  { id: "fmt.strike", label: "Strikethrough", key: "Ctrl+Alt+X", run: md(toggleStrikethroughCommand) },
+  { id: "fmt.code", label: "Inline Code", key: "Ctrl+E", run: md(toggleInlineCodeCommand) },
+  { id: "fmt.link", label: "Link…", key: "Ctrl+K", run: insertLink },
+  { id: "fmt.p", label: "Paragraph", key: "Ctrl+Alt+0", run: md(turnIntoTextCommand) },
+  { id: "fmt.h1", label: "Heading 1", key: "Ctrl+Alt+1", run: md(wrapInHeadingCommand, 1) },
+  { id: "fmt.h2", label: "Heading 2", key: "Ctrl+Alt+2", run: md(wrapInHeadingCommand, 2) },
+  { id: "fmt.h3", label: "Heading 3", key: "Ctrl+Alt+3", run: md(wrapInHeadingCommand, 3) },
+  { id: "fmt.bullet", label: "Bullet List", key: "Ctrl+Alt+8", run: md(wrapInBulletListCommand) },
+  { id: "fmt.ordered", label: "Numbered List", key: "Ctrl+Alt+7", run: md(wrapInOrderedListCommand) },
+  { id: "fmt.task", label: "Task List", key: "Ctrl+Alt+9", run: toggleTask },
+  { id: "fmt.quote", label: "Quote", key: "Ctrl+Shift+B", run: md(wrapInBlockquoteCommand) },
+  { id: "fmt.codeBlock", label: "Code Block", key: "Ctrl+Alt+C", run: md(createCodeBlockCommand) },
+  { id: "fmt.table", label: "Table", key: "Ctrl+Alt+T", run: md(insertTableCommand, { row: 3, col: 3 }) },
+  { id: "fmt.hr", label: "Horizontal Rule", key: "Ctrl+Alt+H", run: md(insertHrCommand) },
+
+  {
+    id: "view.source",
+    label: "Source Mode",
+    key: "Ctrl+/",
+    checked: () => sourceMode,
+    run: () => setSourceMode(!sourceMode),
+  },
+  { id: "view.zoomIn", label: "Zoom In", key: "Ctrl+=", run: () => setZoom(zoom + 0.1) },
+  { id: "view.zoomOut", label: "Zoom Out", key: "Ctrl+-", run: () => setZoom(zoom - 0.1) },
+  { id: "view.zoomReset", label: "Reset Zoom", key: "Ctrl+0", run: () => setZoom(1) },
+  { id: "view.shortcuts", label: "Keyboard Shortcuts…", key: "Ctrl+,", run: () => openShortcutsDialog(registry, MENUS) },
+
+  {
+    id: "help.about",
+    label: "About md-viewer",
+    run: async () =>
+      message(`md-viewer ${await getVersion()}\nLightweight Markdown editor.\ngithub.com/Rawallon/md-viewer`, {
+        title: "About",
+      }),
+  },
+);
+
+const MENUS: MenuDef[] = [
+  { title: "File", items: ["file.new", "file.open", "-", "file.save", "file.saveAs", "-", "file.exportHtml", "file.print", "-", "file.exit"] },
+  { title: "Edit", items: ["edit.undo", "edit.redo", "-", "edit.cut", "edit.copy", "edit.copyRich", "edit.paste", "-", "edit.selectAll"] },
+  {
+    title: "Format",
+    items: [
+      "fmt.bold", "fmt.italic", "fmt.strike", "fmt.code", "fmt.link", "-",
+      "fmt.p", "fmt.h1", "fmt.h2", "fmt.h3", "-",
+      "fmt.bullet", "fmt.ordered", "fmt.task", "fmt.quote", "fmt.codeBlock", "fmt.table", "fmt.hr",
+    ],
+  },
+  { title: "View", items: ["view.source", "-", "view.zoomIn", "view.zoomOut", "view.zoomReset", "-", "view.shortcuts"] },
+  { title: "Help", items: ["help.about"] },
+];
+
+mountMenuBar(document.getElementById("menubar")!, MENUS, registry);
 
 window.addEventListener(
   "keydown",
   (e) => {
-    if (!e.ctrlKey || e.altKey) return;
-    const k = e.key.toLowerCase();
-    const run = (fn: () => unknown) => {
-      e.preventDefault();
-      e.stopPropagation();
-      fn();
-    };
-    if (k === "s") run(() => cmdSave(e.shiftKey));
-    else if (k === "o") run(cmdOpen);
-    else if (k === "n") run(cmdNew);
-    else if (k === "/") run(() => setSourceMode(!sourceMode));
+    if (!modalOpen) registry.handleKey(e);
   },
   true,
 );
+
+// ---------- wiring ----------
 
 // Ctrl+click opens links in the default browser
 editorEl.addEventListener("click", (e) => {
@@ -197,7 +404,7 @@ editorEl.addEventListener("click", (e) => {
 modeBtn.addEventListener("click", () => setSourceMode(!sourceMode));
 sourceEl.addEventListener("input", refreshStatus);
 
-getCurrentWebview().onDragDropEvent(async (event) => {
+webview.onDragDropEvent(async (event) => {
   if (event.payload.type !== "drop") return;
   const path = event.payload.paths.find((p) => /\.(md|markdown|mdown|mkd|txt)$/i.test(p));
   if (path && (await confirmDiscard())) await openPath(path);
@@ -208,6 +415,12 @@ appWindow.onCloseRequested(async (event) => {
 });
 
 (async () => {
+  try {
+    const z = Number(localStorage.getItem("md-viewer.zoom"));
+    if (z && z !== 1) setZoom(z);
+  } catch {
+    /* ignore */
+  }
   const startup = await invoke<string | null>("startup_file");
   if (startup) await openPath(startup);
   if (!crepe) await loadDocument(null, ""); // no startup file, or it failed to open
