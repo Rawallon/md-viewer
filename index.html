@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>md-viewer</title>
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <main id="scroller">
+      <div id="editor"></div>
+      <textarea id="source" spellcheck="false" hidden></textarea>
+    </main>
+    <footer id="status">
+      <span id="file-name">Untitled</span>
+      <span class="spacer"></span>
+      <span id="words"></span>
+      <button id="mode" title="Toggle source mode (Ctrl+/)">Source</button>
+    </footer>
+  </body>
+</html>
