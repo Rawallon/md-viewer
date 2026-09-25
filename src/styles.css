@@ -77,8 +77,9 @@ body {
   overflow: auto;
 }
 
+/* --content-width = text column width; set from settings.ts */
 #editor {
-  max-width: 900px;
+  max-width: calc(var(--content-width, 780px) + 128px);
   margin: 0 auto;
 }
 
@@ -86,10 +87,31 @@ body {
   padding: 48px 64px 120px;
 }
 
+body.full-width #editor,
+body.full-width #source {
+  max-width: none;
+}
+
+/* no wrap: long lines scroll horizontally */
+body.no-wrap #editor .milkdown .ProseMirror {
+  white-space: pre;
+  word-wrap: normal;
+  overflow-wrap: normal;
+}
+
+body.no-wrap #editor {
+  width: max-content;
+  min-width: 100%;
+}
+
+body.no-wrap:not(.full-width) #editor {
+  min-width: min(100%, calc(var(--content-width, 780px) + 128px));
+}
+
 #source {
   display: block;
   width: 100%;
-  max-width: 900px;
+  max-width: calc(var(--content-width, 780px) + 128px);
   min-height: 100%;
   margin: 0 auto;
   padding: 48px 64px 120px;

@@ -18,6 +18,7 @@ Lightweight Markdown viewer/editor for Windows. Tauri 2 (system WebView2) + Milk
 | --- | --- |
 | Ctrl+N / Ctrl+O | New / Open |
 | Ctrl+S / Ctrl+Shift+S | Save / Save As |
+| Ctrl+W / Alt+F4 | Exit (asks if unsaved) |
 | Ctrl+Shift+E / Ctrl+P | Export HTML / Print (PDF) |
 | Ctrl+C / Ctrl+Shift+C | Copy as Markdown / as rich text |
 | Ctrl+B / Ctrl+I / Ctrl+E / Ctrl+K | Bold / Italic / Inline code / Link |
@@ -25,6 +26,8 @@ Lightweight Markdown viewer/editor for Windows. Tauri 2 (system WebView2) + Milk
 | Ctrl+Alt+8 / 7 / 9 | Bullet / Numbered / Task list |
 | Ctrl+Shift+B / Ctrl+Alt+C / Ctrl+Alt+T | Quote / Code block / Table |
 | Ctrl+/ | Toggle source mode |
+| Alt+Z | Toggle word wrap |
+| Ctrl+Alt+W | Toggle text width limit (View → Set Text Width… to change it) |
 | Ctrl+= / Ctrl+- / Ctrl+0 | Zoom in / out / reset |
 | Ctrl+click | Open link in browser |
 

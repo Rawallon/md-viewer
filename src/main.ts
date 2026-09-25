@@ -32,6 +32,7 @@ import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { CommandRegistry } from "./commands";
 import { mountMenuBar, type MenuDef } from "./menubar";
 import { modalOpen, openShortcutsDialog, promptText } from "./dialogs";
+import { applySettings, settings, updateSettings, WIDTH_DEFAULT, WIDTH_MAX, WIDTH_MIN } from "./settings";
 
 const MD_FILTERS = [
   { name: "Markdown", extensions: ["md", "markdown", "mdown", "mkd"] },
@@ -306,6 +307,21 @@ function setZoom(z: number) {
   }
 }
 
+async function setTextWidth() {
+  const input = await promptText(
+    `Text width in pixels (${WIDTH_MIN}–${WIDTH_MAX}, default ${WIDTH_DEFAULT})`,
+    String(WIDTH_DEFAULT),
+    String(settings.width),
+  );
+  if (input == null) return;
+  const n = parseInt(input, 10);
+  if (!Number.isFinite(n)) {
+    await message(`“${input}” is not a number.`, { title: "Text width", kind: "error" });
+    return;
+  }
+  updateSettings({ width: Math.min(WIDTH_MAX, Math.max(WIDTH_MIN, n)), limitWidth: true });
+}
+
 // ---------- commands + menu ----------
 
 const registry = new CommandRegistry();
@@ -316,7 +332,8 @@ registry.add(
   { id: "file.saveAs", label: "Save As…", key: "Ctrl+Shift+S", run: () => cmdSave(true) },
   { id: "file.exportHtml", label: "Export as HTML…", key: "Ctrl+Shift+E", run: cmdExportHtml },
   { id: "file.print", label: "Print / Export PDF…", key: "Ctrl+P", run: () => window.print() },
-  { id: "file.exit", label: "Exit", key: "Alt+F4", native: true, run: () => appWindow.close() },
+  // Alt+F4 always works too (handled by Windows)
+  { id: "file.exit", label: "Exit", key: "Ctrl+W", run: () => appWindow.close() },
 
   { id: "edit.undo", label: "Undo", key: "Ctrl+Z", native: true, run: undo },
   { id: "edit.redo", label: "Redo", key: "Ctrl+Y", native: true, run: redo },
@@ -350,6 +367,21 @@ registry.add(
     checked: () => sourceMode,
     run: () => setSourceMode(!sourceMode),
   },
+  {
+    id: "view.wordWrap",
+    label: "Word Wrap",
+    key: "Alt+Z",
+    checked: () => settings.wordWrap,
+    run: () => updateSettings({ wordWrap: !settings.wordWrap }),
+  },
+  {
+    id: "view.limitWidth",
+    label: "Limit Text Width",
+    key: "Ctrl+Alt+W",
+    checked: () => settings.limitWidth,
+    run: () => updateSettings({ limitWidth: !settings.limitWidth }),
+  },
+  { id: "view.textWidth", label: "Set Text Width…", run: setTextWidth },
   { id: "view.zoomIn", label: "Zoom In", key: "Ctrl+=", run: () => setZoom(zoom + 0.1) },
   { id: "view.zoomOut", label: "Zoom Out", key: "Ctrl+-", run: () => setZoom(zoom - 0.1) },
   { id: "view.zoomReset", label: "Reset Zoom", key: "Ctrl+0", run: () => setZoom(1) },
@@ -376,10 +408,11 @@ const MENUS: MenuDef[] = [
       "fmt.bullet", "fmt.ordered", "fmt.task", "fmt.quote", "fmt.codeBlock", "fmt.table", "fmt.hr",
     ],
   },
-  { title: "View", items: ["view.source", "-", "view.zoomIn", "view.zoomOut", "view.zoomReset", "-", "view.shortcuts"] },
+  { title: "View", items: ["view.source", "-", "view.wordWrap", "view.limitWidth", "view.textWidth", "-", "view.zoomIn", "view.zoomOut", "view.zoomReset", "-", "view.shortcuts"] },
   { title: "Help", items: ["help.about"] },
 ];
 
+applySettings();
 mountMenuBar(document.getElementById("menubar")!, MENUS, registry);
 
 window.addEventListener(
