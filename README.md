@@ -10,6 +10,7 @@ Lightweight Markdown viewer/editor for Windows. Tauri 2 (system WebView2) + Milk
 - Export to HTML, print / save as PDF
 - Editable keyboard shortcuts: View → Keyboard Shortcuts… (Ctrl+,)
 - Drag a `.md` file onto the window, or `md-viewer.exe path\to\file.md`
+- **GFM** badge in the status bar when a file uses GitHub Flavored Markdown (tables, task lists, strikethrough, footnotes, autolinks); hover it for details
 - Light/dark follows Windows
 
 ## Default shortcuts

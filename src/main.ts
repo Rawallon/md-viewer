@@ -3,7 +3,7 @@ import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
 import "./styles.css";
 
-import { editorViewCtx, remarkStringifyOptionsCtx } from "@milkdown/kit/core";
+import { editorViewCtx, remarkCtx, remarkStringifyOptionsCtx } from "@milkdown/kit/core";
 import {
   createCodeBlockCommand,
   insertHrCommand,
@@ -32,6 +32,8 @@ import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { CommandRegistry } from "./commands";
 import { mountMenuBar, type MenuDef } from "./menubar";
 import { modalOpen, openShortcutsDialog, promptText } from "./dialogs";
+import { detectGfm, type Parser } from "./gfm";
+import { imageBlockFix } from "./image-fix";
 import { applySettings, settings, updateSettings, WIDTH_DEFAULT, WIDTH_MAX, WIDTH_MIN } from "./settings";
 
 const MD_FILTERS = [
@@ -44,6 +46,7 @@ const sourceEl = document.getElementById("source") as HTMLTextAreaElement;
 const fileNameEl = document.getElementById("file-name")!;
 const wordsEl = document.getElementById("words")!;
 const modeBtn = document.getElementById("mode") as HTMLButtonElement;
+const gfmEl = document.getElementById("gfm")!;
 const appWindow = getCurrentWindow();
 const webview = getCurrentWebview();
 
@@ -52,6 +55,9 @@ let filePath: string | null = null;
 let savedMarkdown = ""; // baseline to compute dirty state
 let sourceMode = false;
 let zoom = 1;
+let remark: Parser | null = null; // kept from the last editor so source mode can use it
+let gfmTimer = 0;
+let loadedText = ""; // file as read from disk, before Milkdown normalizes it
 
 // ---------- helpers ----------
 
@@ -85,6 +91,17 @@ function refreshStatus() {
   appWindow.setTitle(`${dirty ? "• " : ""}${name} — md-viewer`);
   const words = currentMarkdown().match(/\S+/g)?.length ?? 0;
   wordsEl.textContent = `${words} words`;
+  clearTimeout(gfmTimer);
+  gfmTimer = window.setTimeout(refreshGfm, 400);
+}
+
+function refreshGfm() {
+  // unedited: check the original text (Milkdown rewrites e.g. bare URLs as <url>)
+  const text = isDirty() ? currentMarkdown() : loadedText;
+  const features = remark ? detectGfm(remark, text) : [];
+  gfmEl.hidden = features.length === 0;
+  gfmEl.title = `GitHub Flavored Markdown: uses ${features.join(", ")}.
+These render on GitHub but not in every Markdown viewer.`;
 }
 
 // ---------- editor lifecycle ----------
@@ -95,6 +112,9 @@ async function mountEditor(markdown: string) {
   crepe = new Crepe({
     root: editorEl,
     defaultValue: markdown,
+    // block handles (+ / drag) and slash menu: dragging can't work while the
+    // window-level file drop is enabled, and the Format menu covers the rest
+    features: { [Crepe.Feature.BlockEdit]: false },
     featureConfigs: {
       [Crepe.Feature.ImageBlock]: { proxyDomURL: resolveLocal },
       [Crepe.Feature.Placeholder]: { text: "Start writing…" },
@@ -102,12 +122,15 @@ async function mountEditor(markdown: string) {
   });
   // "-" bullets instead of remark's default "*": smaller diffs for most files
   crepe.editor.config((ctx) => ctx.update(remarkStringifyOptionsCtx, (o) => ({ ...o, bullet: "-" as const })));
+  crepe.editor.use(imageBlockFix);
   crepe.on((api) => api.markdownUpdated(() => refreshStatus()));
   await crepe.create();
+  remark = crepe.editor.action((ctx) => ctx.get(remarkCtx));
 }
 
 async function loadDocument(path: string | null, text: string) {
   filePath = path;
+  loadedText = text;
   if (sourceMode) {
     sourceEl.value = text;
     savedMarkdown = text;

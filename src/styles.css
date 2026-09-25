@@ -92,20 +92,85 @@ body.full-width #source {
   max-width: none;
 }
 
-/* no wrap: long lines scroll horizontally */
+/* inline code flows with the text (Crepe makes it inline-block, which turns a
+   long span into its own box) */
+#editor .milkdown .ProseMirror code:not(pre code) {
+  display: inline;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* footnote definitions: "1. text" on one line, smaller and muted */
+#editor .milkdown .ProseMirror dl[data-type="footnote_definition"] {
+  display: flex;
+  gap: 0.5em;
+  margin: 0.25em 0;
+  font-size: 0.9em;
+  color: var(--muted);
+}
+#editor .milkdown .ProseMirror dl[data-type="footnote_definition"] dt::after {
+  content: ".";
+}
+#editor .milkdown .ProseMirror dl[data-type="footnote_definition"] :is(dd, p) {
+  margin: 0;
+}
+
+/* raw HTML is shown as source, not rendered: style it as code */
+#editor .milkdown .ProseMirror span[data-type="html"] {
+  font: 0.9em var(--font-mono);
+  color: var(--muted);
+}
+
+/* no wrap: the column keeps its width; each long block scrolls on its own
+   (scrolling the whole page made code blocks, rules etc. as wide as the
+   longest line) */
 body.no-wrap #editor .milkdown .ProseMirror {
   white-space: pre;
   word-wrap: normal;
   overflow-wrap: normal;
 }
 
-body.no-wrap #editor {
+body.no-wrap #editor .milkdown .ProseMirror code:not(pre code) {
+  overflow-wrap: normal;
+}
+
+body.no-wrap #editor .milkdown .ProseMirror :is(p, h1, h2, h3, h4, h5, h6),
+body.no-wrap #editor .milkdown .table-wrapper {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* slim per-block scrollbars, visible on hover (shift+wheel scrolls too) */
+body.no-wrap #editor .milkdown .ProseMirror :is(p, h1, h2, h3, h4, h5, h6)::-webkit-scrollbar,
+body.no-wrap #editor .milkdown .table-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+body.no-wrap #editor .milkdown .ProseMirror :is(p, h1, h2, h3, h4, h5, h6)::-webkit-scrollbar-thumb,
+body.no-wrap #editor .milkdown .table-wrapper::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+body.no-wrap #editor .milkdown .ProseMirror :is(p, h1, h2, h3, h4, h5, h6):hover::-webkit-scrollbar-thumb,
+body.no-wrap #editor .milkdown .table-wrapper:hover::-webkit-scrollbar-thumb {
+  background: var(--muted);
+}
+
+/* table cells hold their own <p>; the table-wrapper scrolls instead */
+body.no-wrap #editor .milkdown .table-wrapper :is(td, th) p {
+  overflow: visible;
+}
+
+/* tables: size columns to content instead of fixed layout (fixed layout
+   overlaps cells when text can't wrap) */
+body.no-wrap #editor .milkdown table.children {
+  table-layout: auto;
   width: max-content;
   min-width: 100%;
 }
 
-body.no-wrap:not(.full-width) #editor {
-  min-width: min(100%, calc(var(--content-width, 780px) + 128px));
+body.no-wrap #editor .milkdown table.children :is(td, th) {
+  white-space: nowrap;
 }
 
 #source {
@@ -150,6 +215,21 @@ body.no-wrap:not(.full-width) #editor {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.badge {
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  cursor: help;
+}
+
+.badge[hidden] {
+  display: none;
 }
 
 #mode {
